@@ -26,39 +26,52 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    # 1. Checkout repository files
     - uses: actions/checkout@v4
       with:
         sparse-checkout: overlay.sqlite
     
-    # Install EMSDK
-    - name: Setup Emscripten
-      id: cache-system-libraries
-      uses: actions/cache@v3
+    # 2. Cache EMSDK libraries to speed up future runs.
+    # The '503 Service Unavailable' error usually happens here and is a temporary
+    # issue on GitHub's side. Retrying the workflow is the best solution.
+    # Updated to v4, which is the latest version.
+    - name: Cache Emscripten SDK
+      id: cache-emsdk
+      uses: actions/cache@v4
       with:
         path: ${{env.EM_CACHE_FOLDER}}
         key: ${{inputs.em_version}}-${{runner.os}}
-    - uses: mymindstorm/setup-emsdk@v12
+
+    # 3. Setup Emscripten SDK
+    - name: Setup Emscripten
+      uses: mymindstorm/setup-emsdk@v12
       with:
         version: ${{inputs.em_version}}
         actions-cache-folder: ${{env.EM_CACHE_FOLDER}}
-    - run: emcc -v
+        
+    # 4. Verify Emscripten installation
+    - name: Verify Emscripten
+      run: emcc -v
 
-    # Unpack tarball
+    # 5. Unpack SQLite source tarball
     - name: Unpack tarball
-      run: curl ${{inputs.source_url}} | tar xzf -
+      run: curl -L ${{inputs.source_url}} | tar xzf -
 
-    # Overlay files onto SQLite tree
-    - run: tar -C overlay.sqlite -cf - . | tar -C sqlite -xvf -
+    # 6. Overlay custom files onto the SQLite source tree
+    - name: Overlay files
+      run: tar -C overlay.sqlite -cf - . | tar -C sqlite -xvf -
     
-    # Build
+    # 7. Build the SQLite amalgamation
     - name: Build amalgamation
       working-directory: ./sqlite
       run: ./configure --enable-all && make sqlite3.c
+
+    # 8. Build the WASM module
     - name: Build wasm
       working-directory: ./sqlite/ext/wasm
       run: make dist
 
-    # Package
+    # 9. Create a GitHub release with the build artifacts
     - name: Create release with tarball
       run: |
         echo "SQLite ${{inputs.source_url}}" >> NOTES
